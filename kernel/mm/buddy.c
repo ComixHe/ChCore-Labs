@@ -75,6 +75,20 @@ static struct page *get_buddy_chunk(struct phys_mem_pool *pool,
 	return virt_to_page(pool, (void *)buddy_chunk_addr);
 }
 
+void page_del_helper(struct phys_mem_pool* pool,struct page* page)
+{
+	struct free_list *list = &pool->free_lists[page->order];
+	list_del(&page->node);
+	--(list->nr_free);
+}
+
+void page_add_helper(struct phys_mem_pool* pool,struct page* page)
+{
+	struct free_list *list = &pool->free_lists[page->order];
+	list_add(&page->node,&list->free_list);
+	++(list->nr_free);
+}
+
 /*
  * split_page: split the memory block into two smaller sub-block, whose order
  * is half of the origin page.
@@ -89,10 +103,23 @@ static struct page *get_buddy_chunk(struct phys_mem_pool *pool,
 static struct page *split_page(struct phys_mem_pool *pool, u64 order,
 			       struct page *page)
 {
-	// <lab2>
-	struct page *split_page = NULL;
-	return split_page;
-	// </lab2>
+	if(page->allocated)
+	{
+		kwarn("can't split an allocated page\n");
+		return NULL;
+	}
+	page_del_helper(pool,page); //移除对应page，准备分割
+	while(page->order > order){ //循环分割，直到order达到需求大小为止
+		--(page->order);
+		struct page* buddy_page = get_buddy_chunk(pool,page); //寻找对应buddy_page
+		if(buddy_page != NULL)
+		{
+			buddy_page->allocated = 0;
+			buddy_page->order = page->order;
+			page_add_helper(pool,buddy_page);
+		} //找到后把buddy_page转移到对应free_list
+	}
+	return page;
 }
 
 /*
@@ -105,11 +132,23 @@ static struct page *split_page(struct phys_mem_pool *pool, u64 order,
  */
 struct page *buddy_get_pages(struct phys_mem_pool *pool, u64 order)
 {
-	// <lab2>
-	struct page *page = NULL;
-
+	u64 fit_order = order;
+	while (fit_order < BUDDY_MAX_ORDER && pool->free_lists[fit_order].nr_free <= 0) //当前order没有内存块了，尝试申请更大的内存块。
+		++fit_order;
+	if(fit_order >= BUDDY_MAX_ORDER)
+	{
+		kwarn("can't allocate an page which is grater then limit\n");
+		return NULL;
+	}
+	struct page *page = list_entry(pool->free_lists[fit_order].free_list.next,struct page,node);
+	if(page == NULL)
+	{
+		kdebug("can't get pages\n");
+		return NULL;
+	}
+	split_page(pool,order,page); //拆分page,使得得到的内存块大小和申请的最为接近
+	page->allocated = 1;
 	return page;
-	// </lab2>
 }
 
 /*
@@ -123,11 +162,28 @@ struct page *buddy_get_pages(struct phys_mem_pool *pool, u64 order)
  */
 static struct page *merge_page(struct phys_mem_pool *pool, struct page *page)
 {
-	// <lab2>
-
-	struct page *merge_page = NULL;
-	return merge_page;
-	// </lab2>
+	if(page->allocated)
+	{
+		kwarn("can't merge an allocated page\n");
+		return NULL;
+	}
+	page_del_helper(pool,page);//删除当前待合并页块
+	while(page->order < BUDDY_MAX_ORDER - 1)
+	{
+		struct page* buddy_page = get_buddy_chunk(pool,page);
+		if(buddy_page == NULL || buddy_page->allocated || buddy_page->order != page->order)
+			break; //找不到，已分配且大小相同，已分配且大小不相同
+		page_del_helper(pool,buddy_page);
+		if(page > buddy_page) //调整地址顺序，保证page在左，buddy_page在右
+		{
+			struct page* exchange = page;
+			page = buddy_page;
+			buddy_page = exchange;
+		}
+		++(page->order);
+	}
+	page_add_helper(pool,page);//合并结束，加入对应大小的freelist
+	return page;
 }
 
 /*
@@ -139,9 +195,14 @@ static struct page *merge_page(struct phys_mem_pool *pool, struct page *page)
  */
 void buddy_free_pages(struct phys_mem_pool *pool, struct page *page)
 {
-	// <lab2>
-
-	// </lab2>
+	if(!page->allocated)
+	{
+		kwarn("can't free an free page\n");
+		return;
+	}
+	page->allocated = 0;
+	page_add_helper(pool,page);
+	merge_page(pool,page);
 }
 
 void *page_to_virt(struct phys_mem_pool *pool, struct page *page)
