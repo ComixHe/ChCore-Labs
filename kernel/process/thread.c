@@ -30,12 +30,12 @@ static
 int thread_init(struct thread *thread, struct process *process,
 		u64 stack, u64 pc, u32 prio, u32 type, s32 aff)
 {
-	thread->process = obj_get(process, PROCESS_OBJ_ID, TYPE_PROCESS);
-	thread->vmspace = obj_get(process, VMSPACE_OBJ_ID, TYPE_VMSPACE);
+	thread->process = obj_get(process, PROCESS_OBJ_ID, TYPE_PROCESS); //指定对应进程
+	thread->vmspace = obj_get(process, VMSPACE_OBJ_ID, TYPE_VMSPACE); //指定对应vmspace
 	obj_put(thread->process);
 	obj_put(thread->vmspace);
 	/* Thread context is used as the kernel stack for that thread */
-	thread->thread_ctx = create_thread_ctx();
+	thread->thread_ctx = create_thread_ctx(); //创建线程上下文（tcb）
 	if (!thread->thread_ctx)
 		return -ENOMEM;
 	init_thread_ctx(thread, stack, pc, prio, type, aff);
@@ -161,6 +161,11 @@ static u64 load_binary(struct process *process,
 			 * page aligned segment size. Take care of the page alignment when allocating
 			 * and mapping physical memory.
 			 */
+			seg_sz = elf->p_headers[i].p_memsz; //段大小
+			p_vaddr = elf->p_headers[i].p_vaddr; //需要映射到的虚拟地址
+			u64 v_start = ROUND_DOWN(p_vaddr,PAGE_SIZE);
+			u64 v_end = ROUND_UP(p_vaddr + seg_sz,PAGE_SIZE); //内存对齐
+			seg_map_sz = v_end - v_start; //真正需要映射的段大小
 
 			pmo = obj_alloc(TYPE_PMO, sizeof(*pmo));
 			if (!pmo) {
@@ -180,11 +185,18 @@ static u64 load_binary(struct process *process,
 			 * The physical address of a pmo can be get from pmo->start.
 			 */
 
-			flags = PFLAGS2VMRFLAGS(elf->p_headers[i].p_flags);
+			char *pmo_vstart = (char *)phys_to_virt(pmo->start); //pmo物理地址对应的虚拟地址
+			pmo_vstart += p_vaddr - v_start; //这里处理因为内存对齐多出来的内存地址
+			char *pos = (void *)bin + elf->p_headers[i].p_offset; //找到elf文件程序段的开头
+			size_t copy_size = elf->p_headers[i].p_filesz; //这里注意程序段在文件中和在内存中的大小可能不一样
+			for(u64 a = 0;a<copy_size;++a)
+				pmo_vstart[a] = pos[a]; //开始映射到pmo中
+
+			flags = PFLAGS2VMRFLAGS(elf->p_headers[i].p_flags); //设定页表对应属性
 
 			ret = vmspace_map_range(vmspace,
 						ROUND_DOWN(p_vaddr, PAGE_SIZE),
-						seg_map_sz, flags, pmo);
+						seg_map_sz, flags, pmo); //把pmo映射到虚拟内存中
 
 			BUG_ON(ret != 0);
 		}
@@ -238,7 +250,7 @@ int thread_create_main(struct process *process, u64 stack_base,
 	u64 pc;
 
 	init_vmspace = obj_get(process, VMSPACE_OBJ_ID, TYPE_VMSPACE);
-	obj_put(init_vmspace);
+	obj_put(init_vmspace); //获取进程虚拟空间指针
 
 	/* Allocate and setup a user stack for the init thread */
 	stack_pmo = obj_alloc(TYPE_PMO, sizeof(*stack_pmo));
@@ -251,11 +263,11 @@ int thread_create_main(struct process *process, u64 stack_base,
 	if (stack_pmo_cap < 0) {
 		ret = stack_pmo_cap;
 		goto out_free_obj_pmo;
-	}
+	} //分配一个栈并且挂载到当前进程中
 
 	ret = vmspace_map_range(init_vmspace, stack_base, stack_size,
 				VMR_READ | VMR_WRITE, stack_pmo);
-	BUG_ON(ret != 0);
+	BUG_ON(ret != 0); //将分配好的栈映射到虚拟空间中
 
 	/* init thread */
 	thread = obj_alloc(TYPE_THREAD, sizeof(*thread));
@@ -268,19 +280,20 @@ int thread_create_main(struct process *process, u64 stack_base,
 	stack = stack_base + stack_size;
 
 	pc = load_binary(process, init_vmspace, bin_start, &meta);
-
+	//加载elf文件
 	prepare_env((char *)phys_to_virt(stack_pmo->start) + stack_size,
 		    stack, &meta, bin_name);
 	stack -= ENV_SIZE_ON_STACK;
-
+	//初始化部分环境变量到栈中
 	ret = thread_init(thread, process, stack, pc, prio, type, aff);
 	BUG_ON(ret != 0);
-
+	//初始化线程
 	thread_cap = cap_alloc(process, thread, 0);
 	if (thread_cap < 0) {
 		ret = thread_cap;
 		goto out_free_obj_thread;
 	}
+	//把初始化好的线程挂载到对应进程中
 
 	/* L1 icache & dcache have no coherence */
 	flush_idcache();
