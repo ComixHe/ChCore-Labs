@@ -161,9 +161,36 @@ static int get_next_ptp(ptp_t * cur_ptp, u32 level, vaddr_t va,
  */
 int query_in_pgtbl(vaddr_t * pgtbl, vaddr_t va, paddr_t * pa, pte_t ** entry)
 {
-	// <lab2>
+	ptp_t* cur_ptp = (ptp_t *) pgtbl;
+	ptp_t* next_ptp = NULL;
+	u32 level = 0;
+	int error = 0;
+	
+	while (level <= 3) //循环进行地址索引查询
+	{
+		error = get_next_ptp(cur_ptp,level,va,&next_ptp,entry,false);
+		if(error < 0)
+			return error;
+		else if(error == BLOCK_PTP)
+			break;
+		cur_ptp = next_ptp;
+		++level;
+	}
 
-	// </lab2>
+	if(error == NORMAL_PTP){
+		*pa = ((paddr_t)((*entry)->l3_page.pfn) << L3_INDEX_SHIFT) + GET_VA_OFFSET_L3(va); //计算普通4K页中的物理地址
+	} else if(error == BLOCK_PTP) {
+		switch(level){//计算出大页中的物理地址
+			case 1: 
+				*pa = ((paddr_t)((*entry)->l1_block.pfn) << L1_INDEX_SHIFT) + GET_VA_OFFSET_L1(va);
+				break;
+			case 2: 
+				*pa = ((paddr_t)((*entry)->l2_block.pfn) << L2_INDEX_SHIFT) + GET_VA_OFFSET_L2(va); 
+				break;
+			default:
+				return -1;
+		}
+	}
 	return 0;
 }
 
@@ -185,9 +212,40 @@ int query_in_pgtbl(vaddr_t * pgtbl, vaddr_t va, paddr_t * pa, pte_t ** entry)
 int map_range_in_pgtbl(vaddr_t * pgtbl, vaddr_t va, paddr_t pa,
 		       size_t len, vmr_prop_t flags)
 {
-	// <lab2>
+	pa = ROUND_DOWN(pa, PAGE_SIZE);
+	va = ROUND_DOWN(va, PAGE_SIZE); //对起始地址进行向下4k页对齐
+	len = ROUND_UP(len, PAGE_SIZE); //对映射地址大小进行向上4k页对齐
 
-	// </lab2>
+	for(int i=0;i<len/PAGE_SIZE;++i){ //分别映射
+		ptp_t* cur_ptp = (ptp_t *)pgtbl;
+		ptp_t* next_ptp = NULL;
+		pte_t* pte = NULL;
+		u32 level = 0;
+
+		while (level <= 2)
+		{
+			int error = get_next_ptp(cur_ptp,level,va,&next_ptp,&pte,true);
+			if(error < 0){
+				return error;
+			}
+			if(error == BLOCK_PTP){
+				return -1;
+			}
+			cur_ptp = next_ptp;
+			++level;
+		} //得到L3页表页
+
+		u32 index = GET_L3_INDEX(va);
+		pte = &(next_ptp->ent[index]);
+		pte->pte = 0;
+		pte->l3_page.is_page = 1;
+		pte->l3_page.is_valid = 1;
+		pte->l3_page.pfn = pa >> PAGE_SHIFT;
+		set_pte_flags(pte,flags,flags & KERNEL_PT ? KERNEL_PTE : USER_PTE); //支持用户态pte
+		va += PAGE_SIZE;
+		pa += PAGE_SIZE;
+	}
+	flush_tlb();
 	return 0;
 }
 
@@ -206,9 +264,35 @@ int map_range_in_pgtbl(vaddr_t * pgtbl, vaddr_t va, paddr_t pa,
  */
 int unmap_range_in_pgtbl(vaddr_t * pgtbl, vaddr_t va, size_t len)
 {
-	// <lab2>
+	for(vaddr_t end = va+len;va<end;va+=PAGE_SIZE){
+		ptp_t* cur_ptp = (ptp_t *)pgtbl;
+		ptp_t* next_ptp = NULL;
+		pte_t* pte = NULL;
+		u32 level = 0;
+		int error = 0;
 
-	// </lab2>
+		while (level <= 2)
+		{
+			error = get_next_ptp(cur_ptp,level,va,&next_ptp,&pte,false);
+			if(error == BLOCK_PTP){
+				pte->table.is_valid = 0; //直接设置大页属性
+				break;
+			}
+			else if(error == -ENOMAPPING) //跳过未映射的页
+				break;
+			else if(error < 0)
+				return error;
+			cur_ptp = next_ptp;
+			++level;
+		}
+
+		if(error == NORMAL_PTP){
+			u32 index = GET_L3_INDEX(va);
+			pte = &(cur_ptp->ent[index]);
+			pte->l3_page.is_valid = 0;
+		}
+	}
+	flush_tlb();
 	return 0;
 }
 

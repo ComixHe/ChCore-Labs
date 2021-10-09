@@ -231,7 +231,7 @@ static int ramdisk_read_file(char *path, char **buf)
 
 	int ret = 0;
 	*buf = cpio_extract_single(&binary_cpio_bin_start, path, cpio_cb_file,
-				   NULL);
+				   NULL); //通过过cpio读入文件
 	if (ret == 0)
 		return 0;
 	else
@@ -247,18 +247,18 @@ void process_create_root(char *bin_name)
 	char *binary = NULL;
 	int ret;
 
-	ret = ramdisk_read_file(bin_name, &binary);
+	ret = ramdisk_read_file(bin_name, &binary); //载入elf文件
 	BUG_ON(ret < 0);
 	BUG_ON(binary == NULL);
 
-	root_process = process_create();
+	root_process = process_create(); //创建根进程
 
 	thread_cap = thread_create_main(root_process, ROOT_THREAD_STACK_BASE,
 					ROOT_THREAD_STACK_SIZE,
 					ROOT_THREAD_PRIO, TYPE_ROOT,
 					smp_get_cpu_id(), binary, bin_name);
 
-	root_thread = obj_get(root_process, thread_cap, TYPE_THREAD);
+	root_thread = obj_get(root_process, thread_cap, TYPE_THREAD); //获取指针，但同时主线程的cap的引用计数会增加
 	/* Enqueue: put init thread into the ready queue */
 	BUG_ON(sched_enqueue(root_thread));
 	obj_put(root_thread);
