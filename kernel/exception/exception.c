@@ -53,6 +53,10 @@ void handle_entry_c(int type, u64 esr, u64 address)
 			kinfo("%s",UNKNOWN);
 			sys_exit(-ESUPPORT);
 			break;
+		case ESR_EL1_EC_DABT_LEL: //36
+		case ESR_EL1_EC_DABT_CEL: //37
+			do_page_fault(esr, address); //提供缺页异常处理
+			break;
 	default:
 		kdebug("Unsupported Exception ESR %lx\n", esr);
 		break;

@@ -79,5 +79,5 @@ u64 switch_context(void)
 	 * Return the correct value in order to make eret_to_thread work correctly
 	 * in main.c
 	 */
-	return target_ctx->ec.reg; //返回对应线程寄存器（目前只有单进程单线程，所以直接返回）
+	return (u64)target_ctx->ec.reg; //返回对应线程寄存器（目前只有单进程单线程，所以直接返回）
 }

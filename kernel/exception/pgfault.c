@@ -21,6 +21,7 @@
 #include <common/macro.h>
 #include <common/mm.h>
 #include <common/kmalloc.h>
+#include <sched/context.h>
 
 #include "esr.h"
 
@@ -33,7 +34,7 @@ static inline vaddr_t get_fault_addr()
 
 int handle_trans_fault(struct vmspace *vmspace, vaddr_t fault_addr);
 
-void do_page_fault(u64 esr, u64 fault_ins_addr)
+void do_page_fault(u64 esr, u64 fault_ins_addr) //这里的fault_ins_addr是触发缺页异常的指令的地址，异常处理完后需要继续返回执行
 {
 	vaddr_t fault_addr;
 	int fsc;		// fault status code
@@ -55,6 +56,7 @@ void do_page_fault(u64 esr, u64 fault_ins_addr)
 				sys_exit(ret);
 			}
 			break;
+			arch_set_thread_next_ip(current_thread,fault_ins_addr); //异常处理完成，设定返回地址
 		}
 	default:
 		kinfo("do_page_fault: fsc is unsupported (0x%b) now\n", fsc);
@@ -86,6 +88,28 @@ int handle_trans_fault(struct vmspace *vmspace, vaddr_t fault_addr)
 	 * are recorded in a radix tree for easy management. Such code
 	 * has been omitted in our lab for simplification.
 	 */
-
+	vmr = find_vmr_for_va(vmspace, fault_addr);
+	if (vmr == NULL) {
+		kdebug("Couldn't found vmr for va\n");
+		return -ENOMAPPING;
+	}
+	if (vmr->pmo->type != PMO_ANONYM) {
+		kdebug("PMO type isn't PMO_ANONYM\n");
+		return -ENOMAPPING;
+	}
+	void *page = get_pages(0);
+	if (page == NULL) {
+		kdebug("Coundn't get a new page\n");
+		return -ENOMAPPING;
+	}
+	pa = (paddr_t)virt_to_phys(page);
+	offset = ROUND_DOWN(fault_addr, PAGE_SIZE); //内存对齐
+	int ret = map_range_in_pgtbl(vmspace->pgtbl, offset, pa, PAGE_SIZE, vmr->perm);
+	if (ret < 0) {
+		free_pages(page);
+		kdebug("Map range in pgtbl fault\n");
+		return -ENOMAPPING;
+	}
+	kdebug("page fault success\n");
 	return 0;
 }

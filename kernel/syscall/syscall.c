@@ -29,6 +29,7 @@ void sys_putc(char ch)
 	 * Lab3: Your code here
 	 * Send ch to the screen in anyway as your like
 	 */
+	uart_send((u32)ch);
 }
 
 /*
@@ -36,7 +37,12 @@ void sys_putc(char ch)
  * Update the syscall table as you like to redirect syscalls
  * to functions accordingly
  */
-const void *syscall_table[NR_SYSCALL] = {
+const void *syscall_table[NR_SYSCALL] = { 
 	[0 ... NR_SYSCALL - 1] = sys_debug,
+	[SYS_putc] = sys_putc,
+	[SYS_exit] = sys_exit,
+	[SYS_create_pmo] = sys_create_pmo,
+	[SYS_map_pmo] = sys_map_pmo,
+	[SYS_handle_brk] = sys_handle_brk, //建立系统调用表
 	/* lab3 syscalls finished */
 };
