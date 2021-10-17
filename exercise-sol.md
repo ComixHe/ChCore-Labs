@@ -1,32 +1,82 @@
-### Exercise 3.1 :
+### Exercise 4.1 :
 
-具体实现参见kernel/process/thread.c ,kernel/sched/context.c ,kernel/sched/sched.c。
+文件差异如下所示：
 
-### Exercise 3.2 :
+```
+diff --git a/boot/start.S b/boot/start.S
+index b330fa5..4820afb 100644
+--- a/boot/start.S
++++ b/boot/start.S
+@@ -3,6 +3,7 @@
+ .extern arm64_elX_to_el1
+ .extern boot_cpu_stack
+ .extern secondary_boot_flag
++.extern secondary_init_c
+ .extern clear_bss_flag
+ .extern init_c
+ 
+@@ -11,9 +12,36 @@ BEGIN_FUNC(_start)
+        and     x8, x8, #0xFF
+        cbz     x8, primary
+ 
+-  /* hang all secondary processors before we intorduce multi-processors */
+-secondary_hang:
+-       bl secondary_hang
++       /* Wait for bss clear */
++wait_for_bss_clear:
++       adr     x0, clear_bss_flag
++       ldr     x1, [x0]
++       cmp     x1, #0
++       bne     wait_for_bss_clear
++
++       /* Turn to el1 from other exception levels. */
++       bl      arm64_elX_to_el1
++
++       /* Prepare stack pointer and jump to C. */
++       mov     x1, #0x1000
++       mul     x1, x8, x1
++       adr     x0, boot_cpu_stack
++       add     x0, x0, x1
++       add     x0, x0, #0x1000
++        mov    sp, x0
++
++wait_until_smp_enabled:
++       /* CPU ID should be stored in x8 from the first line */
++       mov     x1, #8
++       mul     x2, x8, x1
++       ldr     x1, =secondary_boot_flag
++       add     x1, x1, x2
++       ldr     x3, [x1]
++       cbz     x3, wait_until_smp_enabled
++
++       /* Set CPU id */
++       mov     x0, x8
++       bl      secondary_init_c
+ 
+ primary:
+```
 
-具体过程解释参见kernel/process/process.c中process_create_root函数的注释。
+问题分析见boot/start.S的中文注释部分。
 
-### Exercise 3.3 :
+### Exercise 4.2 :
 
-具体实现参见kernel/exception/exception_table.s, kernel/exception/exception.S, kernel/exception/exception.c。
+具体实现参见kernel/main.c和kernel/common/smp.c文件。
 
-### Exercise 3.4 ：
+### Exercise 4.3 :
 
-用户态触发同步异常后进入sync_el0_64进行判断，如果同步异常是svc指令触发，则进入el0_syscall后根据syscall_table和syscall_number找到对应的系统调用入口，然后再调用相应的系统调用处理程序。
+并行启动副cpu可能导致并发问题，副cpu启动过程中所用的一些寄存器可能会因为并发问题产生错误的值导致初始化失败，且某些函数属于不可重入函数，所以应该依次启动副cpu。
 
-### Exercise 3.5 :
+### Exercise 4.4 :
 
-具体实现参见user/lib/syscall.c。
+具体实现参见kernel/common/lock.c文件。
 
-### Exercise 3.6 :
+### Exercise 4.5 :
 
-具体实现参见kernel/syscall/syscall.c, kernal/mm/vm_syscall.c。
+具体实现参见kernel/common/lock.c文件。同时根据文档在相应位置上调用接口加锁，解锁统一在exception_return中。同时需要注意的是，来自内核的异常不能加锁，因为这样会重复加锁且本内核锁不是可重入锁。
 
-### Exercise 3.8 :
+### Exercise 4.6 :
 
-具体实现参见user/lib/libmain.c。
+调用unlock_kernel后就要从内核态返回用户态，此时内核处理流程结束了，没有必要再保存寄存器的值。而lock_kernel()后还要继续处理，所以要保存之前寄存器的值以便获取锁后恢复现场继续工作流。
 
-### Exercise 3.9 :
 
-具体实现参见kernel/exception/pgfault.c, kernel/exception/exception.c。
 

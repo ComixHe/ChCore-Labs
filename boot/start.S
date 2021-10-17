@@ -8,9 +8,9 @@
 .extern init_c
 
 BEGIN_FUNC(_start)
-	mrs	x8, mpidr_el1
-	and	x8, x8,	#0xFF
-	cbz	x8, primary
+	mrs	x8, mpidr_el1 /*把当前的cpuid存到x8寄存器中*/
+	and	x8, x8,	#0xFF /*把x8和0xFF相与*/
+	cbz	x8, primary  /*结果为0则为主CPU，不为零则为副CPU，主cpu进入primary开始初始化，副cpu清除bss、设置好栈后循环等待主cpu启动副cpu*/
 
 	/* Wait for bss clear */
 wait_for_bss_clear:
@@ -28,7 +28,7 @@ wait_for_bss_clear:
 	adr 	x0, boot_cpu_stack
 	add	x0, x0, x1
 	add	x0, x0, #0x1000
-        mov	sp, x0
+        mov	sp, x0 /* 设置当前cpu栈为boot_cpu_stack[cpuid] */
 
 wait_until_smp_enabled:
 	/* CPU ID should be stored in x8 from the first line */
@@ -37,8 +37,8 @@ wait_until_smp_enabled:
 	ldr	x1, =secondary_boot_flag
 	add	x1, x1, x2
 	ldr	x3, [x1]
-	cbz	x3, wait_until_smp_enabled
-
+	cbz	x3, wait_until_smp_enabled /*x3的结果即为secondary_boot_flag[cpuid],结果不为零则进入secondary_init_c初始化当前cpu*/
+	/*即这里主cpu通过设置secondary_boot_flag[cpuid] = 1选中启动的cpu*/
 	/* Set CPU id */
 	mov	x0, x8
 	bl 	secondary_init_c
