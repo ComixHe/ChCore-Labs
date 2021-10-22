@@ -136,7 +136,7 @@ u64 switch_context(void)
 	 * Return the correct value in order to make eret_to_thread work correctly
 	 * in main.c
 	 */
-	return (u64)target_ctx->ec.reg; //返回对应线程寄存器（目前只有单进程单线程，所以直接返回）
+	return (u64)target_ctx->ec.reg; //返回对应线程寄存器
 }
 
 /* SYSCALL functions */
@@ -147,6 +147,9 @@ u64 switch_context(void)
  */
 void sys_yield(void)
 {
+	current_thread->thread_ctx->sc->budget = 0;
+	sched(); //立即调度
+	eret_to_thread(switch_context()); //返回用户态
 }
 
 int sched_init(struct sched_ops *sched_ops)

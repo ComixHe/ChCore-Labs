@@ -51,7 +51,20 @@ struct thread idle_threads[PLAT_CPU_NUM];
  */
 int rr_sched_enqueue(struct thread *thread)
 {
-	return -1;
+	if(thread == NULL || thread->thread_ctx ==NULL || thread->thread_ctx->state == TS_READY) //保证下面的解指针操作不会引起内存错误，TS_READY说明该线程已经调度过了
+		return -1;
+	if(thread->thread_ctx->type == TYPE_IDLE)
+		return 0;
+	s32 aff = thread->thread_ctx->affinity;
+	if(aff == NO_AFF)
+		thread->thread_ctx->cpuid = smp_get_cpu_id();
+	else if(aff < PLAT_CPU_NUM)
+		thread->thread_ctx->cpuid = aff;
+	else
+		return -1;
+	thread->thread_ctx->state = TS_READY;
+	list_append(&thread->ready_queue_node,&rr_ready_queue[thread->thread_ctx->cpuid]);
+	return 0;
 }
 
 /*
@@ -62,7 +75,15 @@ int rr_sched_enqueue(struct thread *thread)
  */
 int rr_sched_dequeue(struct thread *thread)
 {
-	return -1;
+	if(thread == NULL || thread->thread_ctx == NULL ||
+		thread->thread_ctx->state != TS_READY ||
+		thread->thread_ctx->type == TYPE_IDLE ||
+		thread->thread_ctx->affinity >= PLAT_CPU_NUM ||
+		list_empty(&thread->ready_queue_node)) //empty检测说明该线程已经从准备队列里被删除了 
+			return -1;
+	thread->thread_ctx->state = TS_INTER;
+	list_del(&thread->ready_queue_node);
+	return 0;
 }
 
 /*
@@ -78,11 +99,21 @@ int rr_sched_dequeue(struct thread *thread)
  */
 struct thread *rr_sched_choose_thread(void)
 {
-	return NULL;
+	u32 cpuid = smp_get_cpu_id();
+	if(list_empty(&rr_ready_queue[cpuid]))
+		return &idle_threads[cpuid];
+	struct thread *next_thread = list_entry(rr_ready_queue[cpuid].next,struct thread,ready_queue_node); //获取准备队列队首的待调度线程，因为需要调整偏移量才能正确访问到struct thread，所以要用list_entry
+	if(rr_sched_dequeue(next_thread))
+		return &idle_threads[cpuid];
+	return next_thread;
 }
 
 static inline void rr_sched_refill_budget(struct thread *target, u32 budget)
 {
+	if(target == NULL || target->thread_ctx ==NULL || target->thread_ctx->type == TYPE_IDLE)
+		return;
+	target->thread_ctx->sc->budget = budget;
+	return;
 }
 
 /*
@@ -99,7 +130,16 @@ static inline void rr_sched_refill_budget(struct thread *target, u32 budget)
  */
 int rr_sched(void)
 {
-	return -1;
+	if (current_thread != NULL && current_thread->thread_ctx->type != TYPE_IDLE){ //还有线程正在运行
+		if(current_thread->thread_ctx->sc->budget > 0) //检查是否可以调度
+			return -1;
+		if(rr_sched_enqueue(current_thread)) //可以调度则尝试把正在运行的线程加入链表
+			return -1;
+	}
+	struct thread *next_thread = rr_sched_choose_thread();
+	rr_sched_refill_budget(next_thread,DEFAULT_BUDGET); //新调度线程初始化预算
+	switch_to_thread(next_thread);
+	return 0;
 }
 
 /*
@@ -140,6 +180,13 @@ int rr_sched_init(void)
  */
 void rr_sched_handle_timer_irq(void)
 {
+	if(current_thread == NULL ||
+		current_thread->thread_ctx == NULL ||
+		current_thread->thread_ctx->type == TYPE_IDLE)
+			return;
+	if(current_thread->thread_ctx->sc->budget > 0)
+		current_thread->thread_ctx->sc->budget--; //时钟中断一次预算减一，避免该线程一直占用cpu,实现抢占式调度
+	return;
 }
 
 struct sched_ops rr = {
