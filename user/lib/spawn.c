@@ -334,7 +334,7 @@ int launch_process_with_pmos_caps(struct user_elf *user_elf,
 		 * stack_offset is the offset from main thread's stack base to
 		 * that address.
 		 */
-		stack_top = MAIN_THREAD_STACK_BASE - MAIN_THREAD_STACK_SIZE;
+		stack_top = MAIN_THREAD_STACK_BASE + MAIN_THREAD_STACK_SIZE;
 		stack_offset = MAIN_THREAD_STACK_SIZE - PAGE_SIZE;
 
 		/* Construct the parameters on the top page of the stack */

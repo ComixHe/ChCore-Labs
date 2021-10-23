@@ -102,3 +102,8 @@ index b330fa5..4820afb 100644
 
 	idle线程是为了没有线程就绪时让cpu运行，否则cpu某一颗核心会一直阻塞在内核态等待就绪线程，同时无法释放大内核锁，这时其它cpu核心则无法进入内核态。
 	时钟中断处理函数调用链：handle_irq -> plat_handle_irq -> handle_timer_irq -> sched_handle_timer_irq -> rr_sched_handle_timer_irq。
+	编译时debug模式有可能会影响评判结果，可以试试release模式。
+
+### Exercise 4.14/4.15 :
+
+具体实现参见user/lib/spawn.c文件。
