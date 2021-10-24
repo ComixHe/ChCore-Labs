@@ -384,7 +384,7 @@ int launch_process_with_pmos_caps(struct user_elf *user_elf,
 		 * create main thread in the new process.
 		 * Please fill the stack_va!
 		 */
-		stack_va = MAIN_THREAD_STACK_BASE + stack_offset;
+		stack_va = MAIN_THREAD_STACK_BASE + MAIN_THREAD_STACK_SIZE - PAGE_SIZE;
 		main_thread_cap =
 		    usys_create_thread(new_process_cap, stack_va, pc,
 				       (u64) NULL, MAIN_THREAD_PRIO, aff);
@@ -397,6 +397,12 @@ int launch_process_with_pmos_caps(struct user_elf *user_elf,
 
 	{
 		/* Step C: Output the child process & thread capabilities */
+		if(child_process_cap){
+			*child_process_cap = new_process_cap;
+		}
+		if(child_main_thread_cap){
+			*child_main_thread_cap = main_thread_cap;
+		}
 	}
 
 	return 0;

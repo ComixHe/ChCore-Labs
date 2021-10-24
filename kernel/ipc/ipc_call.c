@@ -28,7 +28,7 @@
  * process to server's process
  */
 #define MAX_CAP_TRANSFER 8
-int ipc_send_cap(struct ipc_connection *conn, ipc_msg_t * ipc_msg)
+int ipc_send_cap(struct ipc_connection *conn, ipc_msg_t * ipc_msg) //目前只支持父子ipc
 {
 	int i, r;
 	u64 cap_slot_number;
@@ -114,19 +114,19 @@ static u64 thread_migrate_to_server(struct ipc_connection *conn, u64 arg)
 	 * This command set the sp register, read the file to find which field
 	 * of the ipc_connection stores the stack of the server thread?
 	 * */
-	arch_set_thread_stack(target, LAB4_IPC_BLANK);
+	arch_set_thread_stack(target, conn->server_stack_top);
 	/**
 	 * Lab4
 	 * This command set the ip register, read the file to find which field
 	 * of the ipc_connection stores the instruction to be called when switch
 	 * to the server?
 	 * */
-	arch_set_thread_next_ip(target, LAB4_IPC_BLANK);
+	arch_set_thread_next_ip(target, conn->target->server_ipc_config->callback); //服务端的回调函数
 	/**
 	 * Lab4
 	 * The argument set by sys_ipc_call;
 	 */
-	arch_set_thread_arg(target, LAB4_IPC_BLANK);
+	arch_set_thread_arg(target,arg);
 
 	/**
 	 * Passing the scheduling context of the current thread to thread of
@@ -137,8 +137,8 @@ static u64 thread_migrate_to_server(struct ipc_connection *conn, u64 arg)
 	/**
 	 * Switch to the server
 	 */
-	switch_to_thread(target);
-	eret_to_thread(switch_context());
+	switch_to_thread(target); 
+	eret_to_thread(switch_context());//经过以上设置后切换线程返回用户态
 
 	/* Function never return */
 	BUG_ON(1);
@@ -174,13 +174,16 @@ u64 sys_ipc_call(u32 conn_cap, ipc_msg_t * ipc_msg)
 			 (char *)&conn->server_conn_cap, sizeof(u64));
 	if (r < 0)
 		goto out_obj_put;
+	r = ipc_send_cap(conn,ipc_msg);
+	if(r<0)
+		goto out_obj_put;	
 
 	/**
 	 * Lab4
 	 * The arg is actually the 64-bit arg for ipc_dispatcher
 	 * Then what value should the arg be?
 	 * */
-	arg = LAB4_IPC_BLANK;
+	arg = conn->buf.server_user_addr;
 	thread_migrate_to_server(conn, arg);
 
 	BUG("This function should never\n");
@@ -194,7 +197,17 @@ u64 sys_ipc_call(u32 conn_cap, ipc_msg_t * ipc_msg)
  * Lab4
  * Implement your sys_ipc_reg_call
  * */
-u64 sys_ipc_reg_call(u32 conn_cap, u64 arg0)
+u64 sys_ipc_reg_call(u32 conn_cap, u64 arg0) //仿照sys_ipc_call，只不过这个直接传递短消息就行
 {
-	return -1;
+	struct ipc_connection *conn = NULL;
+	int ret;
+	conn = obj_get(current_thread->process,conn_cap,TYPE_CONNECTION);
+	if(!conn){
+		ret = -ECAPBILITY;
+		goto out_fail;
+	}
+	thread_migrate_to_server(conn,arg0);
+	obj_put(conn);
+ 	out_fail:
+		return ret;
 }

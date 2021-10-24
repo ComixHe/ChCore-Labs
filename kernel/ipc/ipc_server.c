@@ -60,7 +60,7 @@ static int register_server(struct thread *server, u64 callback, u64 max_client,
 	// Get and check the parameter vm_config
 	vm_config = &server_ipc_config->vm_config;
 	r = copy_from_user((char *)vm_config, (char *)vm_config_ptr,
-			   sizeof(*vm_config));
+			   sizeof(*vm_config)); //把用户态服务提供的的config拷贝进来
 	if (r < 0)
 		goto out_free_conn_bmp;
 	if (!is_user_addr_range(vm_config->stack_base_addr,

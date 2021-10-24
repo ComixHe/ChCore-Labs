@@ -205,6 +205,8 @@ static u64 load_binary(struct process *process,
 			size_t copy_size = elf->p_headers[i].p_filesz; //这里注意程序段在文件中和在内存中的大小可能不一样
 			for(u64 a = 0;a<copy_size;++a)
 				pmo_vstart[a] = pos[a]; //开始映射到pmo中
+			/*memcpy((void *)(phys_to_virt(pmo->start) + (p_vaddr - ROUND_DOWN(p_vaddr, PAGE_SIZE))),
+				 bin + elf->p_headers[i].p_offset, elf->p_headers[i].p_filesz);*/
 
 			flags = PFLAGS2VMRFLAGS(elf->p_headers[i].p_flags); //设定页表对应属性
 

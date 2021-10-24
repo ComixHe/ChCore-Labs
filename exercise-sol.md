@@ -107,3 +107,7 @@ index b330fa5..4820afb 100644
 ### Exercise 4.14/4.15 :
 
 具体实现参见user/lib/spawn.c文件。
+
+### Exercise 4.16/4.17 :
+
+具体实现参见kernel/ipc_call.c和ipc_return.c文件。
