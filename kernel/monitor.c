@@ -28,8 +28,11 @@ __attribute__ ((optimize("O1")))
 int stack_backtrace()
 {
 	printk("Stack backtrace:\n");
-
-	// Your code here.
-
+	u64* fp = (u64*)*((u64*)read_fp()); //此时read_fp获得的是stack_backtrace的fp,而我们需要stack_test的fp，故进行一次取值。
+	while(fp != NULL){ //无父函数时终止
+		printk("LR %lx FP %lx Args ",*(fp + 1), fp, *(fp - 2));
+		printk("%lx %lx %lx %lx %lx\n", *(fp - 2), *(fp - 1), *(fp), *(fp + 1), *(fp + 2));
+		fp = (u64*) *fp;
+	}
 	return 0;
 }

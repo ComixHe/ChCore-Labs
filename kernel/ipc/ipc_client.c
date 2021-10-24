@@ -94,7 +94,7 @@ static int create_connection(struct thread *source, struct thread *target,
 		ret = -ENOMEM;
 		goto out_fail;
 	}
-	conn->target = create_server_thread(target);
+	conn->target = create_server_thread(target); //在服务端进程中创建一个服务线程
 	if (!conn->target) {
 		ret = -ENOMEM;
 		goto out_fail;
@@ -108,11 +108,11 @@ static int create_connection(struct thread *source, struct thread *target,
 
 	// Create the server thread's stack
 	server_stack_base =
-	    vm_config->stack_base_addr + conn_idx * vm_config->stack_size;
+	    vm_config->stack_base_addr + conn_idx * vm_config->stack_size; //使用位图找到conn_idx后用它来计算出一个新的服务端的栈基地址
 	stack_size = vm_config->stack_size;
 	kdebug("server stack base:%lx size:%lx\n", server_stack_base,
 	       stack_size);
-	stack_pmo = kmalloc(sizeof(struct pmobject));
+	stack_pmo = kmalloc(sizeof(struct pmobject)); //为栈分配pmo
 	if (!stack_pmo) {
 		ret = -ENOMEM;
 		goto out_free_obj;
@@ -125,7 +125,7 @@ static int create_connection(struct thread *source, struct thread *target,
 
 	// Create and map the shared buffer for client and server
 	server_buf_base =
-	    vm_config->buf_base_addr + conn_idx * vm_config->buf_size;
+	    vm_config->buf_base_addr + conn_idx * vm_config->buf_size; //计算本次通信服务端栈地址
 	client_buf_base = client_vm_config->buf_base_addr;
 	buf_size = MIN(vm_config->buf_size, client_vm_config->buf_size);
 	client_vm_config->buf_size = buf_size;
@@ -142,19 +142,19 @@ static int create_connection(struct thread *source, struct thread *target,
 	vmspace_map_range(current_thread->vmspace, client_buf_base, buf_size,
 			  VMR_READ | VMR_WRITE, buf_pmo);
 	vmspace_map_range(target->vmspace, server_buf_base, buf_size,
-			  VMR_READ | VMR_WRITE, buf_pmo);
+			  VMR_READ | VMR_WRITE, buf_pmo); //把共享缓冲区分别映射到两个线程的地址空间里
 
 	conn->buf.client_user_addr = client_buf_base;
-	conn->buf.server_user_addr = server_buf_base;
+	conn->buf.server_user_addr = server_buf_base; //写回ipc_connection
 
-	conn_cap = cap_alloc(current_process, conn, 0);
+	conn_cap = cap_alloc(current_process, conn, 0); //为ipc_connection分配cap
 	if (conn_cap < 0) {
 		ret = conn_cap;
 		goto out_free_obj;
 	}
 
 	server_conn_cap =
-	    cap_copy(current_process, target->process, conn_cap, 0, 0);
+	    cap_copy(current_process, target->process, conn_cap, 0, 0); //把ipc_connection的cap复制到服务端的cap solt里
 	if (server_conn_cap < 0) {
 		ret = server_conn_cap;
 		goto out_free_obj;

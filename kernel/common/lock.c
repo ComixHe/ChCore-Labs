@@ -42,9 +42,10 @@ void lock(struct lock *lock)
 	/** 
 	 * The following asm code means:
 	 * 
-	 * lock->next = fetch_and_add(1);
+	 * lock->next = fetch_and_add(1); 
 	 * while(lock->next != lock->owner);
 	 */
+	//lock->owner == lock->next时表示当前的锁处于可获取状态，加1表示锁owner所持有
 	asm volatile ("       prfm    pstl1strm, %3\n"
 		      "1:     ldaxr   %w0, %3\n"
 		      "       add     %w1, %w0, #0x1\n"
@@ -91,6 +92,7 @@ void unlock(struct lock *lock)
 	 * Unlock the ticket lock here
 	 * Your code should be no more than 5 lines
 	*/
+	++(lock->owner);
 }
 
 /** 
@@ -101,7 +103,7 @@ void unlock(struct lock *lock)
 */
 int is_locked(struct lock *lock)
 {
-	return -1;
+	return lock->owner != lock->next;
 }
 
 /**
@@ -110,6 +112,7 @@ int is_locked(struct lock *lock)
  */
 void kernel_lock_init(void)
 {
+	lock_init(&big_kernel_lock);
 }
 
 /**
@@ -118,6 +121,11 @@ void kernel_lock_init(void)
  */
 void lock_kernel(void)
 {
+	/*int ret = 0;
+	ret = try_lock(&big_kernel_lock);
+	if(ret == -1)
+		kdebug("can't get big kernel lock!\n");*/
+	lock(&big_kernel_lock);
 }
 
 /**
@@ -126,4 +134,6 @@ void lock_kernel(void)
  */
 void unlock_kernel(void)
 {
+	if(is_locked(&big_kernel_lock))
+		unlock(&big_kernel_lock);
 }

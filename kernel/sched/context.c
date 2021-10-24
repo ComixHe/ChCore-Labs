@@ -57,7 +57,10 @@ void init_thread_ctx(struct thread *thread, u64 stack, u64 func, u32 prio,
 	 */
 
 	/* Fill the context of the thread */
-
+	/* ELR 和 SPSR 成对存在，前者记录的从当前特权级返回到之前特权级时的返回地址，这里为程序入口函数的地址，而后者记录程序的各种状态。 */
+	thread->thread_ctx->ec.reg[SP_EL0] = stack; //设定线程上下文中的栈顶指针
+	thread->thread_ctx->ec.reg[ELR_EL1] = func; //设立线程入口地址，即从内核态向用户态
+	thread->thread_ctx->ec.reg[SPSR_EL1] = SPSR_EL1_USER; //意为从EL1切换到USER(EL0)
 	/* Set thread type */
 	thread->thread_ctx->type = type;
 
